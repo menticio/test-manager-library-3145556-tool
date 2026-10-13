@@ -70,3 +70,10 @@ El script comprueba el reloj de la API leyendo el `iat` del token: no hace falta
 ✓ /loans/overdue devuelve 3 líneas: Cien años de soledad (6 días), Breve historia del tiempo (6 días), Código limpio (6 días)
 ✓ Reporte 2026-09-13 a 2026-10-13: 12 filas; primero «María» con 4 préstamos.
 ```
+
+## Requisitos no funcionales (RNF-1 y RNF-2)
+
+| Comando | Qué prueba | Resultado obtenido |
+|---|---|---|
+| `node seed.mjs race` | RNF-2 / ADR-002: dos `POST /loans` **simultáneos** del último ejemplar (API con 4 workers) | `1 con 201, 1 con 409 BOOK_NOT_AVAILABLE; disponibles después: 0` (repetido dos veces) |
+| `node seed.mjs load` | RNF-1: catálogo de 5 000 libros creado por la API y 20 búsquedas (texto, categoría, páginas) | `mediana 19 ms, máxima 25 ms` (límite: 300 ms) |

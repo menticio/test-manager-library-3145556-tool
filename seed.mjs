@@ -133,6 +133,59 @@ async function present() {
   if (overdue.length !== 3 || report.rows.length === 0) fail('El resultado no coincide con la evidencia de T-21.')
 }
 
-if (phase === 'past') await past().catch((e) => fail(e.message))
-else if (phase === 'present') await present().catch((e) => fail(e.message))
-else fail('Uso: node seed.mjs past | present')
+/** RNF-2 / ADR-002: two SIMULTANEOUS loans of the last copy: exactly one 201 and one 409 BOOK_NOT_AVAILABLE. */
+async function race() {
+  await login()
+  const novela = (await call('GET', '/categories')).items.find((c) => c.name === 'Novela').id
+  const stamp = String(Date.now()).slice(-9)
+  const book = await call('POST', '/books', { title: `Último ejemplar ${stamp}`, author: 'Prueba RNF-2', isbn: `9789${stamp}`, category_id: novela, total_copies: 1 })
+  const a = await call('POST', '/members', { full_name: 'Bibliotecario A (RNF-2)', document_number: `A${stamp}` })
+  const b = await call('POST', '/members', { full_name: 'Bibliotecario B (RNF-2)', document_number: `B${stamp}` })
+
+  const outcomes = await Promise.allSettled([lend(a.id, [book.id]), lend(b.id, [book.id])])
+  const created = outcomes.filter((o) => o.status === 'fulfilled').length
+  const refused = outcomes.filter((o) => o.status === 'rejected' && o.reason.code === 'BOOK_NOT_AVAILABLE').length
+  const after = await call('GET', `/books/${book.id}`)
+
+  console.log(`✓ Dos préstamos simultáneos del último ejemplar: ${created} con 201, ${refused} con 409 BOOK_NOT_AVAILABLE; disponibles después: ${after.available_copies}.`)
+  if (created !== 1 || refused !== 1 || after.available_copies !== 0) fail('El resultado no cumple RNF-2.')
+}
+
+/** RNF-1: with 5 000 books, searching answers in less than 300 ms (measured from the client). */
+async function load() {
+  await login()
+  const categories = (await call('GET', '/categories')).items
+  const existing = (await call('GET', '/books?size=1')).total
+  for (let n = existing; n < 5000; n += 50) {
+    await Promise.all(Array.from({ length: Math.min(50, 5000 - n) }, (_, k) => {
+      const i = n + k
+      return call('POST', '/books', {
+        title: `Libro de carga ${String(i).padStart(4, '0')}`, author: `Autor de carga ${i % 97}`, isbn: `9785${String(i).padStart(9, '0')}`,
+        category_id: categories[i % categories.length].id, total_copies: 1,
+      }).catch((e) => { if (e.code !== 'ISBN_TAKEN') throw e })
+    }))
+  }
+  const total = (await call('GET', '/books?size=1')).total
+
+  const searches = [
+    '/books?q=carga&size=20', '/books?q=autor%20de%20carga%2042&size=50', '/books?q=soledad', '/books?q=zzz-no-existe',
+    ...categories.map((c) => `/books?category_id=${c.id}&size=50`),
+    ...[1, 10, 50, 100, 250].map((p) => `/books?page=${p}&size=20`),
+    '/books?q=libro&category_id=' + categories[0].id + '&page=3&size=50', '/books?q=LIBRO%20DE%20CARGA%2049', '/books?q=historia', '/books?q=c&size=50',
+    '/books?q=ó', '/books?size=50',
+  ]
+  const times = []
+  for (const path of searches) {
+    const start = performance.now()
+    await call('GET', path)
+    times.push(performance.now() - start)
+  }
+  times.sort((x, y) => x - y)
+  const max = times.at(-1)
+  console.log(`✓ Catálogo con ${total} libros. ${times.length} búsquedas: mediana ${times[Math.floor(times.length / 2)].toFixed(0)} ms, máxima ${max.toFixed(0)} ms.`)
+  if (total < 5000 || max >= 300) fail('El resultado no cumple RNF-1.')
+}
+
+const phases = { past, present, race, load }
+if (phases[phase]) await phases[phase]().catch((e) => fail(e.message))
+else fail('Uso: node seed.mjs past | present | race | load')
