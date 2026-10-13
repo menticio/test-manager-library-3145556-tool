@@ -48,3 +48,25 @@ No hay prórroga: suban avances parciales con commits pequeños durante la prueb
 | [`test-manager-library-3145556-page`](https://github.com/code-sena/test-manager-library-3145556-page) | Sitio público estático de presentación |
 | [`test-manager-library-3145556-infra`](https://github.com/code-sena/test-manager-library-3145556-infra) | Contenedores, red, volúmenes y motor de base de datos vacío |
 | [`test-manager-library-3145556-tool`](https://github.com/code-sena/test-manager-library-3145556-tool) | Utilidades: sembrador de datos de demostración |
+
+## Sembrador de demostración (T-21)
+
+`seed.mjs` es Node.js 22 **sin dependencias** y usa **solo la API** (`data-model.md` §9: el sembrador nunca usa SQL).
+Necesita `API_URL` (por defecto `http://localhost:8000/api/v1`), `ADMIN_USERNAME` y `ADMIN_PASSWORD` del entorno; no imprime
+ningún secreto. Los pasos completos están en el README de `infra`.
+
+| Fase | API con | Qué crea |
+|---|---|---|
+| `node seed.mjs past` | `CLOCK_OFFSET_DAYS=-20` | 40 libros (8 por categoría), 10 socios, 5 préstamos: 3 sin devolver (quedan vencidos) y 2 devueltos |
+| `node seed.mjs present` | `CLOCK_OFFSET_DAYS=0` | 10 préstamos más (15 en total), comprueba que un socio con vencidos es rechazado y verifica el resultado |
+
+El script comprueba el reloj de la API leyendo el `iat` del token: no hace falta ningún endpoint extra.
+
+### Evidencia
+
+```text
+✓ Fase pasado: 40 libros, 10 socios, 5 préstamos (3 quedarán vencidos).
+✓ Fase presente: 10 préstamos nuevos (15 en total).
+✓ /loans/overdue devuelve 3 líneas: Cien años de soledad (6 días), Breve historia del tiempo (6 días), Código limpio (6 días)
+✓ Reporte 2026-09-13 a 2026-10-13: 12 filas; primero «María» con 4 préstamos.
+```
